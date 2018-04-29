@@ -16,7 +16,7 @@ A set of utilities to help with gitlab-ci Pipelines.
     - NEXUS_PASS
     - KUBE_CONFIG
     
-##Image functions:
+## Image functions:
   - builder_image_update
     - Installs: apt-transport-https, Python, jq, yq, kubectl
   - builder_image_install_sbt
