@@ -1,0 +1,52 @@
+mage: openjdk:8-jre
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  DOCKER_DRIVER: overlay2
+  MOUNT_POINT: /builds/$CI_PROJECT_PATH/mnt
+  DOCKER_HOST: tcp://localhost:2375
+
+cache:
+  paths:
+    - ~/.ivy/cache
+
+stages:
+  - build
+  - deploy_int
+  - deploy_production
+
+before_script:
+  - source ci-utils/ci-utils.sh
+  - builder_image_update
+
+build:
+  tags:
+  - shell-gitlab-runner
+  services:
+  - docker:dind
+  stage: build
+  script:
+    - builder_image_install_sbt
+    - builder_image_install_docker
+    - sbt clean compile package docker
+    - docker_image_push src/main/k8s/deployment.yml
+
+deploy_stage:
+  tags:
+  - shell-gitlab-runner
+  stage: deploy_stage
+  script:
+    - kube_deploy_and_wait stage src/main/k8s/deployment.yml
+  when: manual
+  only:
+    - master
+
+deploy_production:
+  tags:
+  - shell-gitlab-runner
+  stage: deploy_production
+  script:
+    - kube_deploy_and_wait production src/main/k8s/deployment.yml
+  when: manual
+  only:
+    - master
