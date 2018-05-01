@@ -2,46 +2,63 @@
 
 ## Builder Image functions
 ######################################
+function builder_exec() {
+    local cmds=$@
+    $cmd
+    if [ $? != 0 ]; then
+        echo "builder_exec: FATAL: Executing '$cmds' Failed."
+        exit 1
+    fi
+}
+
 function builder_image_update() {
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
     echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" >/etc/apt/sources.list.d/kubernetes.list
     
-    apt-get update -y
+    builder_exec apt-get update -y
 
     ## Install Python, pip, jq, yq (for Yaml file Parsing), kubectl
-    apt-get install -yqq apt-transport-https ca-certificates curl gnupg2 software-properties-common
-    apt-get install -yqq jq python-setuptools python-dev build-essential kubectl
-    easy_install pip && pip install yq
+    builder_exec apt-get install -yqq apt-transport-https ca-certificates curl gnupg2 software-properties-common
+    builder_exec apt-get install -yqq jq python-setuptools python-dev build-essential kubectl
+    builder_exec easy_install pip
+    builder_exec pip install yq
 
     ## kube config
-    mkdir -p "$HOME/.build/" && echo "${KUBE_CONFIG}" > "$HOME/.build/kube.config"
+    builder_exec mkdir -p "$HOME/.build/"
+    echo "${KUBE_CONFIG}" > "$HOME/.build/kube.config"
 }
 
 function builder_image_install_sbt() {
     echo "deb http://dl.bintray.com/sbt/debian /" | tee -a /etc/apt/sources.list.d/sbt.list
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 642AC823
-    apt-get update -y
-    apt-get install sbt -y
-    sbt sbtVersion
-  
-    echo "realm=Sonatype Nexus Repository Manager
-host=$NEXUS_HOST
-user=$NEXUS_USER
-password=$NEXUS_PASS" > "$HOME/.sbt/.credentials"
+    builder_exec apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 642AC823
+    builder_exec apt-get update -y
+    builder_exec apt-get install sbt -y
+    builder_exec sbt sbtVersion
+
+    if [ -z "${NEXUS_HOST}" ] || [ -z "${NEXUS_USER}" ] || [ -z "${NEXUS_PASS}" ]; then
+        echo "builder_image_install_sbt: WARN: NEXUS_{HOST,USER,PASS} not set.  Skipping ~/.sbt/.credentials"
+    else
+        echo -e "realm=Sonatype Nexus Repository Manager\nhost=$NEXUS_HOST\nuser=$NEXUS_USER\npassword=$NEXUS_PASS" \
+             > "$HOME/.sbt/.credentials"
+    fi
 }
 
 function builder_image_install_docker() {
-  curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
-  add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
+    curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
 
-  apt-get update
-  apt-get install -y docker-ce
+    builder_exec apt-get update -y
+    builder_exec apt-get install -y docker-ce
 
-  builder_image_docker_registry_login
+    builder_image_docker_registry_login
 }
 
 function builder_image_docker_registry_login() {
-  echo -n "${DOCKER_REGISTRY_PASS}" |docker login "${DOCKER_REGISTRY}" --username="${DOCKER_REGISTRY_USER}" --password-stdin
+    if [ -z "${DOCKER_REGISTRY}" ] || [ -z "${DOCKER_REGISTRY_USER}" ] || [ -z "${DOCKER_REGISTRY_PASS}" ]; then
+        echo "builder_image_docker_registry_login: FATAL: DOCKER_REGISTRY{,USER,PASS} not set"
+        exit 1
+    fi
+    echo -n "${DOCKER_REGISTRY_PASS}" |docker login "${DOCKER_REGISTRY}" --username="${DOCKER_REGISTRY_USER}" --password-stdin
 }
 
 ## Project functions
@@ -53,8 +70,9 @@ function project_get_sbt_variable() {
 }
 
 function project_get_mvn_variable() {
-   local project_var=$1
-   mvn help:evaluate -Dexpression="project.${project_var}" | tail -8 | head -1
+    local project_var=$1; shift
+
+    mvn help:evaluate -Dexpression="project.${project_var}" | tail -8 | head -1
 }
 
 function project_get_variable() {
