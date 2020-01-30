@@ -4,9 +4,9 @@
 ######################################
 function builder_exec() {
     local cmds=$@
-    $cmd
+    ${cmds}
     if [ $? != 0 ]; then
-        echo "builder_exec: FATAL: Executing '$cmds' Failed."
+        echo "builder_exec: FATAL: Executing '${cmds}' Failed."
         exit 1
     fi
 }
